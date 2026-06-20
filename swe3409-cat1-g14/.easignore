@@ -1,0 +1,24 @@
+# Build artifacts
+node_modules/
+.expo/
+.git/
+android/
+ios/
+*.apk
+*.aab
+*.ipa
+
+# Development files
+docs/
+screenshots/
+_screenshots/
+_source-images/
+.venv/
+__pycache__/
+*.log
+*.md
+
+# IDE
+.vscode/
+.idea/
+*.swp

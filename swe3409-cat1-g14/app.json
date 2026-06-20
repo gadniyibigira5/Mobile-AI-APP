@@ -1,25 +1,37 @@
 {
   "expo": {
-    "name": "Milk Check",
-    "slug": "milk-check",
+    "name": "MilkCheck",
+    "slug": "swe3409-cat1-g14",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F5B800"
+    },
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "monochromeImage": "./assets/android-icon-monochrome.png",
+        "backgroundColor": "#F5B800"
       },
-      "predictiveBackGestureEnabled": false
+      "package": "com.gadniyibigira5.swe3409cat1g14",
+      "usesCleartextTraffic": true
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "bundler": "metro"
+    },
+    "plugins": [],
+    "extra": {
+      "eas": {
+        "projectId": "429b6777-65e2-4eca-acc7-33c7fa82b781"
+      }
     }
   }
 }
