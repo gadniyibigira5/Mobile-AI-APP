@@ -29,35 +29,88 @@ export type Delivery = NewDelivery & {
   sent: boolean;       // true when the API accepted it
 };
 
-/** true if text is exactly "FRM-" followed by 4 digits, e.g. "FRM-0012".
- *  Tip: /^FRM-\d{4}$/.test(text) */
+/**
+ * true if text is exactly "FRM-" followed by 4 digits, e.g. "FRM-0012".
+ */
 export function isValidFarmerId(text: string): boolean {
-  // TODO M1: write this, then delete this TODO line.
-  throw new Error('M1 isValidFarmerId is not written yet');
+  return /^FRM-\d{4}$/.test(text);
 }
 
-/** Return '' when the input is fine, otherwise the FIRST problem, with exactly these messages:
- *   farmer code (trim + upper-case it first) -> 'Enter a farmer code like FRM-0012'
- *   litres empty, not a number, <= 0 or > 60 -> 'Litres must be more than 0 and at most 60'
- *   temperature empty, < 0 or > 45           -> 'Temperature must be 0 to 45 °C'
- *   hours empty, < 0 or > 24                 -> 'Hours since milking must be 0 to 24'
- *  Watch out: Number('') is 0, so check for empty text first.
- *  Tip: const l = Number(litres); if (litres.trim() === '' || !(l > 0 && l <= 60)) return '...'; */
-export function checkDelivery(farmerId: string, litres: string, tempC: string, hours: string): string {
-  // TODO M1: write this, then delete this TODO line.
-  throw new Error('M1 checkDelivery is not written yet');
+/**
+ * Return '' when the input is fine, otherwise the FIRST problem found.
+ *
+ * Messages are exact, because the collector sees them on screen:
+ *   farmer code           -> 'Enter a farmer code like FRM-0012'
+ *   litres                -> 'Litres must be more than 0 and at most 60'
+ *   temperature           -> 'Temperature must be 0 to 45 °C'
+ *   hours since milking   -> 'Hours since milking must be 0 to 24'
+ */
+export function checkDelivery(
+  farmerId: string,
+  litres: string,
+  tempC: string,
+  hours: string,
+): string {
+  // Farmer code: trim, upper-case, then check shape.
+  const cleanId = farmerId.trim().toUpperCase();
+  if (!isValidFarmerId(cleanId)) {
+    return 'Enter a farmer code like FRM-0012';
+  }
+
+  // Litres: must not be empty, must be a number, must be > 0 and <= 60.
+  const l = Number(litres);
+  if (litres.trim() === '' || Number.isNaN(l) || !(l > 0 && l <= 60)) {
+    return 'Litres must be more than 0 and at most 60';
+  }
+
+  // Temperature: must not be empty, must be a number, must be 0..45.
+  const t = Number(tempC);
+  if (tempC.trim() === '' || Number.isNaN(t) || t < 0 || t > 45) {
+    return 'Temperature must be 0 to 45 °C';
+  }
+
+  // Hours: must not be empty, must be a number, must be 0..24.
+  const h = Number(hours);
+  if (hours.trim() === '' || Number.isNaN(h) || h < 0 || h > 24) {
+    return 'Hours since milking must be 0 to 24';
+  }
+
+  return '';
 }
 
-/** null -> 'Not checked'; below 0.3 -> 'Low'; below 0.6 -> 'Medium'; otherwise 'High'.
- *  These are the same limits as risk_label() in the Python API. */
+/**
+ * Turn a risk number into the word the collector sees.
+ *   null            -> 'Not checked'
+ *   below 0.3       -> 'Low'
+ *   below 0.6       -> 'Medium'
+ *   otherwise       -> 'High'
+ *
+ * These are the same limits as risk_label() in the Python API.
+ */
 export function riskLabel(risk: number | null): string {
-  // TODO M1: write this, then delete this TODO line.
-  throw new Error('M1 riskLabel is not written yet');
+  if (risk === null) return 'Not checked';
+  if (risk < 0.3) return 'Low';
+  if (risk < 0.6) return 'Medium';
+  return 'High';
 }
 
-/** count = number of deliveries; litres = their sum rounded to 1 decimal
- *  (Math.round(x * 10) / 10); highRisk = deliveries whose risk is 0.6 or more (null does not count). */
-export function totals(deliveries: Delivery[]): { count: number; litres: number; highRisk: number } {
-  // TODO M1: write this, then delete this TODO line.
-  throw new Error('M1 totals is not written yet');
+/**
+ * Summary line shown at the top of the delivery list.
+ *   count    = number of deliveries
+ *   litres   = sum of litres, rounded to 1 decimal
+ *   highRisk = number of deliveries with risk >= 0.6 (null does not count)
+ */
+export function totals(deliveries: Delivery[]): {
+  count: number;
+  litres: number;
+  highRisk: number;
+} {
+  const count = deliveries.length;
+  const sumLitres = deliveries.reduce((acc, d) => acc + d.litres, 0);
+  const litres = Math.round(sumLitres * 10) / 10;
+  const highRisk = deliveries.filter(
+    (d) => d.risk !== null && d.risk >= 0.6,
+  ).length;
+
+  return { count, litres, highRisk };
 }
