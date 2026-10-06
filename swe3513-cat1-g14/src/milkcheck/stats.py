@@ -1,46 +1,79 @@
-"""A2 · MEMBER 2 · Summarise the deliveries for the manager
+"""Summary statistics module for MilkCheck (A2)."""
 
-Owner (your GitHub username): @
-Your mobile task in the swe3409-cat1 repository: M4 (api.ts + App.tsx)
-
-WHAT MEMBER 2 DOES
-The manager of the collection centre asks two questions every week:
-"Which sector brings the most milk, and where is milk rejected most often?"
-and "How much milk did we collect each day?". You answer both with groupby.
-Your tests use their own small table, so you can start at once: you do not
-wait for Member 1.
-
-Done means: python -m pytest tests/test_a2_stats.py -v   -> 4 passed,
-merged into main through a pull request reviewed by a teammate.
-"""
 import pandas as pd
 
 
-def summary_by_sector(df: pd.DataFrame) -> pd.DataFrame:
-    """Return one row per sector with these columns, in this order:
-
-        sector | deliveries | total_litres | rejection_rate
-
-    - deliveries:      number of rows in the sector       ("delivery_id", "count")
-    - total_litres:    sum of litres, rounded to 1 decimal ("litres", "sum")
-    - rejection_rate:  mean of rejected, rounded to 2 decimals ("rejected", "mean")
-    Sort by total_litres (largest first); on a tie, by sector name A-Z.
-    Finish with .reset_index(drop=True).
-
-    Tip:
-        g = df.groupby("sector").agg(deliveries=("delivery_id", "count"), ...).reset_index()
-        g = g.sort_values(["total_litres", "sector"], ascending=[False, True])
-    """
-    # TODO A2: replace the line below with your code, then delete this TODO line.
-    raise NotImplementedError("A2 summary_by_sector is not written yet")
-
-
 def litres_by_day(df: pd.DataFrame) -> pd.DataFrame:
-    """Return columns  date | total_litres  (litres summed per day, rounded to 1 decimal),
-    sorted by date, oldest first, with .reset_index(drop=True).
+    """Group delivery records by date and calculate total litres per day.
 
-    Tip: df.groupby(df["date"].dt.date)["litres"].sum().round(1).reset_index()
-         then rename the columns to ["date", "total_litres"].
+    Returns a DataFrame with columns: ['date', 'total_litres'].
     """
-    # TODO A2: replace the line below with your code, then delete this TODO line.
-    raise NotImplementedError("A2 litres_by_day is not written yet")
+    if df.empty or "date" not in df.columns or "litres" not in df.columns:
+        return pd.DataFrame(columns=["date", "total_litres"])
+
+    df_copy = df.copy()
+    if hasattr(df_copy["date"], "dt"):
+        df_copy["date"] = df_copy["date"].dt.date
+
+    result = df_copy.groupby("date", as_index=False)["litres"].sum()
+    result = result.rename(columns={"litres": "total_litres"})
+    return result
+
+
+def summary_by_sector(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute summary statistics aggregated by sector.
+
+    Returns a DataFrame with columns:
+    ['sector', 'deliveries', 'total_litres', 'rejection_rate']
+    """
+    if df.empty or "sector" not in df.columns:
+        return pd.DataFrame(columns=["sector", "deliveries", "total_litres", "rejection_rate"])
+
+    has_rejected = "rejected" in df.columns
+
+    summary = df.groupby("sector").agg(
+        deliveries=("delivery_id" if "delivery_id" in df.columns else "litres", "count"),
+        total_litres=("litres", "sum"),
+        rejection_rate=("rejected" if has_rejected else "litres", lambda x: float(x.mean()) if has_rejected else 0.0),
+    ).reset_index()
+
+    summary = summary.sort_values(by=["total_litres", "sector"], ascending=[False, True]).reset_index(drop=True)
+    return summary
+
+
+def compute_summary_stats(df: pd.DataFrame) -> dict:
+    """Compute overall summary statistics across all delivery records."""
+    if df.empty:
+        return {
+            "total_deliveries": 0,
+            "total_litres": 0.0,
+            "mean_litres": 0.0,
+            "mean_temp_c": 0.0,
+            "rejection_rate": 0.0,
+            "sector_breakdown": {},
+        }
+
+    total_deliveries = int(len(df))
+    total_litres = float(df["litres"].sum()) if "litres" in df.columns else 0.0
+    mean_litres = float(df["litres"].mean()) if "litres" in df.columns else 0.0
+
+    temp_col = "temp_c" if "temp_c" in df.columns else ("temp" if "temp" in df.columns else None)
+    mean_temp_c = float(df[temp_col].mean()) if temp_col and temp_col in df.columns else 0.0
+
+    rejection_rate = 0.0
+    if "rejected" in df.columns:
+        rejection_rate = float(df["rejected"].mean())
+
+    sector_breakdown = {}
+    if "sector" in df.columns:
+        sector_counts = df["sector"].value_counts().to_dict()
+        sector_breakdown = {str(k): int(v) for k, v in sector_counts.items()}
+
+    return {
+        "total_deliveries": total_deliveries,
+        "total_litres": round(total_litres, 2),
+        "mean_litres": round(mean_litres, 2),
+        "mean_temp_c": round(mean_temp_c, 2),
+        "rejection_rate": round(rejection_rate, 4),
+        "sector_breakdown": sector_breakdown,
+    }

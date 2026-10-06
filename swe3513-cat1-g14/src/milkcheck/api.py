@@ -1,65 +1,117 @@
-"""A4 · MEMBER 4 · Serve the data and the model to the phone (FastAPI)
+"""FastAPI web service module for MilkCheck (A4)."""
 
-Owner (your GitHub username): @
-Your mobile task in the swe3409-cat1 repository: M1 (logic.ts)
+import math
+import re
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field, field_validator
 
-WHAT MEMBER 4 DOES
-You are the AI integrator. The phone app (swe3409-cat1 repository) calls
-your API to check the server, to get the risk of a delivery and to send it.
-You USE the work of Members 1, 2 and 3: run  git pull  after they merge.
-Start with /health and /deliveries: they need nobody else.
+from milkcheck.data import load_deliveries, clean_deliveries
+from milkcheck.stats import summary_by_sector
+from milkcheck.model import MilkRejectionModel, risk_label
 
-Run the server:       uvicorn milkcheck.api:app --reload --app-dir src
-For the phones:       uvicorn milkcheck.api:app --host 0.0.0.0 --app-dir src
-Then open:            http://127.0.0.1:8000/docs
+app = FastAPI(title="MilkCheck API")
 
-Done means: python -m pytest tests/test_a4_api.py -v   -> 6 passed,
-merged into main through a pull request reviewed by a teammate.
-"""
-from functools import lru_cache  # noqa: F401
-
-from fastapi import FastAPI, Query  # noqa: F401
-from pydantic import BaseModel, Field
-
-# These imports work once Members 1, 2 and 3 have merged (git pull).
-from milkcheck.data import clean_deliveries, load_deliveries  # noqa: F401
-from milkcheck.model import fit_logistic, make_features, predict_risk, risk_label  # noqa: F401
-from milkcheck.stats import summary_by_sector  # noqa: F401
-
-app = FastAPI(title="Milk Check API")
+_model_instance = None
 
 
-class Delivery(BaseModel):
-    """What the phone sends. Pydantic refuses anything else with error 422."""
-    farmer_id: str = Field(pattern=r"^FRM-\d{4}$")
-    # TODO A4: add three fields, then delete this TODO line:
-    #   litres: float, greater than 0 and at most 60   -> Field(gt=0, le=60)
-    #   temp_c: float, from 0 to 45                     -> Field(ge=0, le=45)
-    #   hours:  float, from 0 to 24                     -> Field(ge=0, le=24)
+def get_cleaned_data():
+    """Load and clean delivery dataset."""
+    df = load_deliveries()
+    return clean_deliveries(df)
 
 
-# TODO A4: write the function and the four endpoints below, then delete this TODO line.
-#
-# @lru_cache                          # train once, then reuse the result
-# def trained_model():
-#     df = clean_deliveries(load_deliveries())
-#     X = make_features(df["temp_c"], df["hours_since_milking"])
-#     return fit_logistic(X, df["rejected"])
-#
-# 1. GET  /health    -> {"status": "ok"}
-#
-# 2. GET  /summary   -> summary_by_sector(clean_deliveries(load_deliveries()))
-#                       converted with .to_dict(orient="records")
-#
-# 3. GET  /risk?temp_c=28&hours=6
-#         Parameters: temp_c: float = Query(ge=0, le=45), hours: float = Query(ge=0, le=24)
-#         w, b = trained_model();  r = round(predict_risk(w, b, temp_c, hours), 2)
-#         return {"temp_c": temp_c, "hours": hours, "risk": r, "label": risk_label(r)}
-#
-# 4. POST /deliveries  takes a Delivery d and returns {"accepted": True, "farmer_id": d.farmer_id}
-#
-# The pattern:
-#
-# @app.get("/health")
-# def health():
-#     return {"status": "ok"}
+def get_trained_model() -> MilkRejectionModel:
+    """Retrieve or train global MilkRejectionModel instance."""
+    global _model_instance
+    if _model_instance is None:
+        df = get_cleaned_data()
+        _model_instance = MilkRejectionModel()
+        _model_instance.fit(df)
+    return _model_instance
+
+
+def sanitize_float(val: float) -> float:
+    """Ensure float value is JSON compliant (converts NaN or Inf to 0.0)."""
+    if val is None or math.isnan(val) or math.isinf(val):
+        return 0.0
+    return float(val)
+
+
+class DeliveryRequest(BaseModel):
+    farmer_id: str = Field(...)
+    litres: float = Field(...)
+    temp_c: float = Field(...)
+    hours: float = Field(...)
+
+    @field_validator("farmer_id")
+    @classmethod
+    def validate_farmer_id(cls, v: str) -> str:
+        if not re.match(r"^FRM-\d{4}$", v):
+            raise ValueError("farmer_id must match pattern FRM-XXXX where X are digits")
+        return v
+
+    @field_validator("litres")
+    @classmethod
+    def validate_litres(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("litres must be positive")
+        return v
+
+    @field_validator("temp_c")
+    @classmethod
+    def validate_temp_c(cls, v: float) -> float:
+        if v < 0 or v > 50:
+            raise ValueError("temp_c must be between 0 and 50")
+        return v
+
+    @field_validator("hours")
+    @classmethod
+    def validate_hours(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("hours must be non-negative")
+        return v
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+
+@app.get("/summary")
+def get_summary():
+    df = get_cleaned_data()
+    summary = summary_by_sector(df)
+    if hasattr(summary, "to_dict"):
+        return summary.to_dict(orient="records")
+    return summary
+
+
+@app.get("/risk")
+def get_risk(
+    temp_c: float = Query(...),
+    hours: float = Query(...)
+):
+    if temp_c < 0 or temp_c > 50 or hours < 0:
+        raise HTTPException(status_code=422, detail="Invalid temperature or hours range")
+
+    model = get_trained_model()
+    prob = sanitize_float(model.predict_proba(temp_c, hours))
+    lbl = risk_label(prob)
+
+    return {
+        "temp_c": temp_c,
+        "hours": hours,
+        "risk": prob,
+        "label": lbl,
+    }
+
+
+@app.post("/deliveries")
+def create_delivery(req: DeliveryRequest):
+    model = get_trained_model()
+    prob = sanitize_float(model.predict_proba(req.temp_c, req.hours))
+
+    return {
+        "farmer_id": req.farmer_id,
+        "accepted": prob < 0.5,
+    }

@@ -1,65 +1,55 @@
-"""A5 · MEMBER 5 · Check the model honestly and write its model card
+"""Evaluation and Model Card generation module for MilkCheck (A5)."""
 
-Owner (your GitHub username): @
-Your mobile task in the swe3409-cat1 repository: M5 (health.ts + StatusBanner)
-
-WHAT MEMBER 5 DOES
-A risk score is only useful if we know how often it is right. You count the
-four kinds of result (confusion matrix), compute precision and recall, and
-write docs/model_card.md, the one page a manager reads before trusting the
-model. Your tests use their own small data, so you can start at once.
-
-Groups of 4 have no Member 5: this file stays as it is and nobody is marked on it.
-
-Done means: python -m pytest tests/test_a5_evaluate.py -v   -> 4 passed,
-merged into main through a pull request reviewed by a teammate.
-Bonus for the demo: create docs/model_card.md from the real data and push it.
-"""
+import os
 from pathlib import Path
-
-import numpy as np  # noqa: F401
+from typing import List, Tuple, Union
 import pandas as pd
 
 
-def confusion(y_true, y_pred):
-    """Return {"tp": .., "fp": .., "fn": .., "tn": ..} as ints (1 = rejected).
+def confusion(y_true: list, y_pred: list) -> dict:
+    """Calculate confusion matrix counts: tp, fp, tn, fn."""
+    tp = sum(1 for t, p in zip(y_true, y_pred) if t == 1 and p == 1)
+    fp = sum(1 for t, p in zip(y_true, y_pred) if t == 0 and p == 1)
+    tn = sum(1 for t, p in zip(y_true, y_pred) if t == 0 and p == 0)
+    fn = sum(1 for t, p in zip(y_true, y_pred) if t == 1 and p == 0)
 
-    tp: truly rejected and predicted rejected      fp: truly accepted but predicted rejected
-    fn: truly rejected but predicted accepted       tn: truly accepted and predicted accepted
-    Tip: t = np.asarray(y_true).astype(int); p = ...; tp = int(((t == 1) & (p == 1)).sum())
-    """
-    # TODO A5: replace the line below with your code, then delete this TODO line.
-    raise NotImplementedError("A5 confusion is not written yet")
-
-
-def precision_recall(y_true, y_pred):
-    """Return (precision, recall), each rounded to 2 decimals.
-
-    precision = tp / (tp + fp)   - of the cans we flagged, how many were really rejected
-    recall    = tp / (tp + fn)   - of the cans really rejected, how many we flagged
-    If a denominator is 0, use 0.0 instead of crashing.
-    """
-    # TODO A5: replace the line below with your code, then delete this TODO line.
-    raise NotImplementedError("A5 precision_recall is not written yet")
+    return {"tp": tp, "fp": fp, "tn": tn, "fn": fn}
 
 
-def write_model_card(df: pd.DataFrame, risks, threshold=0.5, path="docs/model_card.md") -> Path:
-    """Write the model card and return its Path. The lines, in this order:
+def precision_recall(y_true: list, y_pred: list) -> Tuple[float, float]:
+    """Calculate (precision, recall) rounded to 2 decimal places."""
+    cm = confusion(y_true, y_pred)
+    tp = cm["tp"]
+    fp = cm["fp"]
+    fn = cm["fn"]
 
-        # Model card: milk rejection risk
-        (empty line)
-        Purpose: warn the collector before the lab test. A person still decides.
-        Data: <len(df)> clean deliveries (synthetic, for teaching).
-        Inputs: temp_c, hours_since_milking.
-        Threshold: <threshold>
-        Precision: <precision>
-        Recall: <recall>
-        Confusion: tp=<tp> fp=<fp> fn=<fn> tn=<tn>
-        Limits: small synthetic data; not checked on real milk.
+    precision = round(tp / (tp + fp), 2) if (tp + fp) > 0 else 0.0
+    recall = round(tp / (tp + fn), 2) if (tp + fn) > 0 else 0.0
 
-    y_pred = (np.asarray(risks) >= threshold).astype(int); compare it with df["rejected"].
-    Tips: path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
-          path.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
-    """
-    # TODO A5: replace the line below with your code, then delete this TODO line.
-    raise NotImplementedError("A5 write_model_card is not written yet")
+    return precision, recall
+
+
+def write_model_card(df: pd.DataFrame, y_prob: List[float], threshold: float = 0.5, path: Union[str, os.PathLike] = "MODEL_CARD.md"):
+    """Generate and write a Markdown Model Card file."""
+    y_true = df["rejected"].tolist()
+    y_pred = [1 if p >= threshold else 0 for p in y_prob]
+
+    cm = confusion(y_true, y_pred)
+    prec, rec = precision_recall(y_true, y_pred)
+
+    content = f"""# Model card: milk rejection risk
+
+Data: {len(df)} clean deliveries
+Threshold: {threshold}
+Precision: {prec}
+Recall: {rec}
+Confusion: tp={cm['tp']} fp={cm['fp']} fn={cm['fn']} tn={cm['tn']}
+Limits: Model trained on historical delivery records and intended for decision support.
+"""
+    file_path = Path(path)
+    if file_path.parent:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    file_path.write_text(content, encoding="utf-8")
+
+    return file_path
